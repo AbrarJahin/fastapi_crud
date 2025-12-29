@@ -1,0 +1,7 @@
+{
+    "files.exclude": {
+        "**/.vscode": true,
+        "**/.conda": true,
+        "**/app.sqlite3": true
+    }
+}
