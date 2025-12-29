@@ -22,7 +22,7 @@ condaenv.*
 *.sqlite
 *.sqlite3
 
-log/
+.log/
 *.log
 
 .pytest_cache/
