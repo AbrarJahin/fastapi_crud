@@ -19,21 +19,22 @@ handlers:
     filename: "__LOG_FILE__"
     encoding: utf-8
 
+loggers:
+  uvicorn.error:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  uvicorn.access:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  watchfiles.main:
+    level: WARNING
+    handlers: [console, file]
+    propagate: false
+
 root:
   level: INFO
   handlers: [console, file]
-
-loggers:
-  watchfiles.main:
-    level: WARNING
-    handlers: [file, console]
-    propagate: false
-  uvicorn:
-    level: INFO
-    propagate: true
-  uvicorn.error:
-    level: INFO
-    propagate: true
-  uvicorn.access:
-    level: INFO
-    propagate: true
