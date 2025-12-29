@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from app.database import SessionLocal
 from app.schemas import ItemCreate, ItemUpdate, ItemOut, PaginatedItems
 from app.models.db.item import Item
+from datetime import datetime
 
 app = FastAPI(
     title="FastAPI SQLite CRUD",
@@ -23,7 +24,10 @@ def get_db():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "time": datetime.utcnow()
+    }
 
 
 @app.post("/items", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
