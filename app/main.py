@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
@@ -5,7 +6,10 @@ from sqlalchemy import select, func
 from app.database import SessionLocal
 from app.schemas import ItemCreate, ItemUpdate, ItemOut, PaginatedItems
 from app.models.db.item import Item
-from datetime import datetime
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="FastAPI SQLite CRUD",
@@ -24,12 +28,14 @@ def get_db():
 
 @app.get("/health")
 def health():
+    logger.info("Health check called")
     return {
         "status": "ok",
         "time": datetime.utcnow()
     }
 
 
+# 1) CREATE
 @app.post("/items", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
 def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
     item = Item(name=payload.name, description=payload.description)
@@ -39,6 +45,7 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
     return item
 
 
+# 2) DETAIL BY ID
 @app.get("/items/{item_id}", response_model=ItemOut)
 def get_item(item_id: int, db: Session = Depends(get_db)):
     item = db.get(Item, item_id)
@@ -47,6 +54,7 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
     return item
 
 
+# 3) GET ALL with pagination (skip + limit) and total count
 @app.get("/items", response_model=PaginatedItems)
 def list_items(
     skip: int = Query(0, ge=0),
@@ -58,6 +66,7 @@ def list_items(
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 
+# 4) UPDATE (partial update)
 @app.put("/items/{item_id}", response_model=ItemOut)
 def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)):
     item = db.get(Item, item_id)
@@ -75,6 +84,7 @@ def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
     return item
 
 
+# 5) DELETE
 @app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_item(item_id: int, db: Session = Depends(get_db)):
     item = db.get(Item, item_id)
