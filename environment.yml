@@ -1,0 +1,13 @@
+name: fastapi-sqlite-crud
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9.12
+  - pip
+  - pip:
+      - fastapi==0.110.3
+      - uvicorn[standard]==0.30.6
+      - SQLAlchemy==2.0.32
+      - pydantic==2.8.2
+      - alembic==1.13.2
+      #- databases[sqlite]==0.6.3
