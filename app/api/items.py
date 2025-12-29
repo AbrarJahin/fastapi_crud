@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
 from app.database import SessionLocal
-from app.schemas import ItemCreate, ItemUpdate, ItemOut, PaginatedItems
+from app.models.view import ItemCreate, ItemUpdate, ItemOut, PaginatedItems
 from app.models.db.item import Item
 
 import logging
