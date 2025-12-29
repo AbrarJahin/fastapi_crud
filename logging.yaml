@@ -24,6 +24,10 @@ root:
   handlers: [console, file]
 
 loggers:
+  watchfiles.main:
+    level: WARNING
+    handlers: [file, console]
+    propagate: false
   uvicorn:
     level: INFO
     propagate: true
