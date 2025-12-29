@@ -1,5 +1,5 @@
 \
-.PHONY: clear install migrate dev dev-nolog run update-db update-env clean
+.PHONY: clear install migrate dev dev-nolog run update-db update-env clean kill kill-all ps
 
 ENV_FILE := environment.yml
 ENV_PATH := .conda/env
@@ -96,3 +96,21 @@ p='app.sqlite3'; \
 shutil.rmtree('.log', ignore_errors=True); \
 shutil.rmtree('.conda', ignore_errors=True); \
 print('Clean done.')"
+
+kill:
+	@if not defined pid ( \
+		echo ERROR: pid is required && \
+		echo Usage: make kill pid=PID && \
+		exit /b 1 \
+	)
+	@echo Killing process with PID=$(pid)
+	@powershell -Command "Stop-Process -Id $(pid) -Force" || echo Process not found
+
+# --- Kill ALL uvicorn processes ---
+kill-all:
+	@echo Killing all uvicorn processes...
+	@powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force"
+
+# --- List running uvicorn processes ---
+ps:
+	@powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,CPU,StartTime"
