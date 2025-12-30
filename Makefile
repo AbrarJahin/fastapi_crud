@@ -114,3 +114,15 @@ kill-all:
 # --- List running uvicorn processes ---
 ps:
 	@powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Format-Table Id,ProcessName,CPU,StartTime"
+
+# --- Dev server (reload) WITHOUT logging, runs detached in background ---
+dev-background-nolog:
+	@echo Starting uvicorn in background (detached)...
+	@powershell -Command "\
+		Start-Process \
+			-FilePath '$(CONDA)' \
+			-ArgumentList 'run -p $(ENV_PATH) uvicorn app.main:app --reload --reload-dir app --host $(HOST) --port $(PORT)' \
+			-WorkingDirectory '$(CURDIR)' \
+			-WindowStyle Hidden \
+			-PassThru | Out-Null"
+	@echo ✔ Server started in background on http://$(HOST):$(PORT)
