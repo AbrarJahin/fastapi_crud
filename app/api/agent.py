@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-from urllib.parse import urljoin
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -42,40 +41,19 @@ class TranslateResponse(BaseModel):
     translated_text: str
 
 
-def _ollama_base() -> str:
-    """
-    Normalize base URL.
-    - Removes trailing slashes
-    - If user mistakenly sets .../api, remove it (because we add /api/...)
-    """
-    base = (settings.ollama_base_url or "").strip().rstrip("/")
-    if base.endswith("/api"):
-        base = base[:-4]
-    return base
-
-
-def _build_url(path: str) -> str:
-    base = _ollama_base()
-    if not base:
-        raise HTTPException(status_code=500, detail="OLLAMA_BASE_URL is not configured.")
-    # Ensure path starts with "/"
-    if not path.startswith("/"):
-        path = "/" + path
-    # urljoin needs a trailing slash on base to work correctly
-    return urljoin(base + "/", path.lstrip("/"))
-
-
 async def _ollama_get(path: str, timeout: float = 10.0) -> Dict[str, Any]:
-    url = _build_url(path)
+    url = settings.ollama_url(path)
     try:
-        # trust_env=False is CRITICAL on many Windows setups to ignore proxy env vars
+        # trust_env=False is IMPORTANT on many Windows setups to ignore proxy env vars
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             r = await client.get(url)
     except httpx.ConnectError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Cannot connect to Ollama at {url}. "
-                   f"Check OLLAMA_BASE_URL in .env and that the host/port are reachable. Error: {e}",
+            detail=(
+                f"Cannot connect to Ollama at {url}. "
+                f"Check OLLAMA_BASE_URL in .env and that the host/port are reachable. Error: {e}"
+            ),
         ) from e
     except httpx.TimeoutException as e:
         raise HTTPException(
@@ -89,15 +67,17 @@ async def _ollama_get(path: str, timeout: float = 10.0) -> Dict[str, Any]:
 
 
 async def _ollama_post(path: str, payload: Dict[str, Any], timeout: float = 120.0) -> Dict[str, Any]:
-    url = _build_url(path)
+    url = settings.ollama_url(path)
     try:
         async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             r = await client.post(url, json=payload)
     except httpx.ConnectError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Cannot connect to Ollama at {url}. "
-                   f"Check OLLAMA_BASE_URL in .env and that the host/port are reachable. Error: {e}",
+            detail=(
+                f"Cannot connect to Ollama at {url}. "
+                f"Check OLLAMA_BASE_URL in .env and that the host/port are reachable. Error: {e}"
+            ),
         ) from e
     except httpx.TimeoutException as e:
         raise HTTPException(
@@ -116,7 +96,7 @@ async def health() -> Dict[str, Any]:
     data = await _ollama_get("/api/tags", timeout=5.0)
     return {
         "ok": True,
-        "ollama_base_url": _ollama_base(),
+        "ollama_base_url": settings.ollama_base_url_norm,
         "models_count": len(data.get("models", [])),
         "models": [m.get("name") for m in data.get("models", []) if isinstance(m, dict)],
     }
@@ -126,7 +106,7 @@ async def health() -> Dict[str, Any]:
 async def config() -> Dict[str, Any]:
     """Return the configured model names (useful for debugging)."""
     return {
-        "ollama_base_url": settings.ollama_base_url,
+        "ollama_base_url": settings.ollama_base_url_norm,
         "chat_model": settings.ollama_chat_model,
         "embed_model": settings.ollama_embed_model,
         "translate_model": settings.ollama_translate_model,
