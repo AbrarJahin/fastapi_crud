@@ -4,6 +4,7 @@ from fastapi import FastAPI
 import logging
 
 from app.api.items import router as items_router
+from app.api.agent import router as agent_router
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ app = FastAPI(
 
 # Register routers
 app.include_router(items_router)
+app.include_router(agent_router)
 
 
 @app.get("/health")
