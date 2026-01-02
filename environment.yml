@@ -5,12 +5,39 @@ dependencies:
   - python=3.9.12
   - pip
   - pip:
+      # -------------------------
+      # Core API stack
+      # -------------------------
       - fastapi==0.110.3
       - uvicorn[standard]==0.30.6
       - httpx==0.27.2
+
+      # -------------------------
+      # Database / ORM / migrations
+      # -------------------------
       - SQLAlchemy==2.0.32
+      - alembic==1.13.2
+
+      # -------------------------
+      # Settings / validation
+      # -------------------------
       - pydantic==2.8.2
       - pydantic-settings==2.4.0
       - python-dotenv==1.0.1
-      - alembic==1.13.2
-      #- databases[sqlite]==0.6.3
+
+      # -------------------------
+      # Web-search QA dependencies
+      # -------------------------
+      - duckduckgo-search==6.3.3
+      - beautifulsoup4==4.12.3
+
+      # -------------------------
+      # Testing
+      # -------------------------
+      - pytest==8.3.4
+
+      # -------------------------
+      # Code quality / formatting
+      # -------------------------
+      - ruff==0.8.4
+      - black==24.10.0
