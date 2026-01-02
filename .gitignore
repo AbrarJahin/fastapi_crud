@@ -16,7 +16,6 @@ Thumbs.db
 .env
 .env.*
 condaenv.*
-!.env.example
 
 *.db
 *.sqlite
