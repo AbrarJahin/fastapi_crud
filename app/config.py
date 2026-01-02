@@ -37,11 +37,10 @@ class Settings(BaseSettings):
     ask_web_max_page_bytes: int = Field(default=1_000_000, validation_alias="ASK_WEB_MAX_PAGE_BYTES")
     ask_web_fetch_concurrency: int = Field(default=3, validation_alias="ASK_WEB_FETCH_CONCURRENCY")
 
-    # ---------- Normalized / derived (not from env directly) ----------
+    # ---------- Normalized / derived ----------
     ollama_base_url_norm: str = ""  # computed after init
 
     def model_post_init(self, __context: Any) -> None:
-        """Runs once after Settings() is created; good place for normalization + validation."""
         # Normalize URL (strip, remove trailing slash, remove accidental /api suffix)
         base = (self.ollama_base_url or "").strip().rstrip("/")
         if base.endswith("/api"):
@@ -59,6 +58,9 @@ class Settings(BaseSettings):
         # -------------------------
         # Basic validations (fail fast at startup)
         # -------------------------
+        if not (self.database_url or "").strip():
+            raise ValueError("DATABASE_URL is empty.")
+
         if not self.ollama_base_url_norm:
             raise ValueError("OLLAMA_BASE_URL is empty after normalization.")
         if not self.ollama_embed_model:
@@ -74,21 +76,15 @@ class Settings(BaseSettings):
         if not self.ask_web_user_agent:
             raise ValueError("ASK_WEB_USER_AGENT is empty.")
         if self.ask_web_max_page_bytes < 100_000:
-            # Keep a safe lower bound so you don't accidentally starve content
             raise ValueError("ASK_WEB_MAX_PAGE_BYTES is too small (min recommended ~100000).")
         if not (1 <= self.ask_web_fetch_concurrency <= 10):
             raise ValueError("ASK_WEB_FETCH_CONCURRENCY must be between 1 and 10.")
 
     def ollama_url(self, path: str) -> str:
-        """
-        Build a full URL to Ollama endpoints.
-        Usage: settings.ollama_url("/api/tags")
-        """
         p = path.strip()
         if not p.startswith("/"):
             p = "/" + p
         return urljoin(self.ollama_base_url_norm + "/", p.lstrip("/"))
 
 
-# Singleton: loaded once at import time and reused everywhere
 settings = Settings()
