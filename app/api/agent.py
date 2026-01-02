@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 
+import random
+
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
 
@@ -178,11 +180,34 @@ def _ddg_search_sync(query: str, max_results: int) -> List[WebSource]:
 
 
 async def _ddg_search(query: str, max_results: int) -> List[WebSource]:
-    try:
-        return await asyncio.to_thread(_ddg_search_sync, query, max_results)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"DuckDuckGo search failed: {e}") from e
+    # exponential backoff (polite handling of rate limits)
+    delays = [1.0, 2.0, 4.0]
+    last_err: Exception | None = None
 
+    for i, d in enumerate(delays, start=1):
+        try:
+            return await asyncio.to_thread(_ddg_search_sync, query, max_results)
+        except Exception as e:
+            last_err = e
+            msg = str(e).lower()
+
+            # only backoff for rate limits / transient failures
+            if "ratelimit" in msg or "rate limit" in msg or "202" in msg:
+                # jitter helps prevent repeated bursts
+                await asyncio.sleep(d + random.uniform(0.0, 0.5))
+                continue
+
+            # non-rate-limit failure: return immediately
+            raise HTTPException(status_code=502, detail=f"DuckDuckGo search failed: {e}") from e
+
+    # exhausted retries
+    raise HTTPException(
+        status_code=429,
+        detail=(
+            "DuckDuckGo rate-limited this server. Please wait 30–120 seconds and try again, "
+            "or enable caching / switch to a dedicated search API for reliability."
+        ),
+    ) from last_err
 
 async def _fetch_url_text(
     client: httpx.AsyncClient,
