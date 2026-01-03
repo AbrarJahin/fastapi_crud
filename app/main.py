@@ -22,4 +22,4 @@ app.include_router(agent_router)
 @app.get("/health")
 def health():
     logger.info("Health check called")
-    return {"status": "ok", "time": datetime.utcnow()}
+    return {"status": "ok", "time": datetime.utcnow().isoformat() + "Z"}
