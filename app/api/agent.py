@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -9,8 +10,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
-
-import random
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
@@ -39,7 +38,9 @@ class QAResponse(BaseModel):
 
 class TranslateRequest(BaseModel):
     text: str = Field(..., min_length=1)
-    target_language: str = Field(..., min_length=2, description="Language name or ISO code, e.g. 'en', 'bn', 'ar'")
+    target_language: str = Field(
+        ..., min_length=2, description="Language name or ISO code, e.g. 'en', 'bn', 'ar'"
+    )
     source_language: Optional[str] = Field(None, description="Optional source language hint")
 
 
@@ -71,12 +72,45 @@ class AskWebResponse(BaseModel):
 
 
 # -----------------------------
+# httpx timeout helpers
+# -----------------------------
+def _timeout(connect_s: float, read_s: float, write_s: float, pool_s: float) -> httpx.Timeout:
+    """
+    Best practice: separate timeouts.
+    - connect: network handshake
+    - read: server response (for LLM generation this can be long)
+    - write: upload request body
+    - pool: waiting for a connection from pool
+    """
+    return httpx.Timeout(connect=connect_s, read=read_s, write=write_s, pool=pool_s)
+
+
+def _ollama_timeouts_for_get() -> httpx.Timeout:
+    return _timeout(
+        connect_s=settings.ollama_timeout_connect_s,
+        read_s=settings.ollama_timeout_get_read_s,
+        write_s=settings.ollama_timeout_write_s,
+        pool_s=settings.ollama_timeout_pool_s,
+    )
+
+
+def _ollama_timeouts_for_post(read_override_s: Optional[float] = None) -> httpx.Timeout:
+    read_s = read_override_s if read_override_s is not None else settings.ollama_timeout_post_read_s
+    return _timeout(
+        connect_s=settings.ollama_timeout_connect_s,
+        read_s=read_s,
+        write_s=settings.ollama_timeout_write_s,
+        pool_s=settings.ollama_timeout_pool_s,
+    )
+
+
+# -----------------------------
 # Ollama helpers
 # -----------------------------
-async def _ollama_get(path: str, timeout: float = 10.0) -> Dict[str, Any]:
+async def _ollama_get(path: str) -> Dict[str, Any]:
     url = settings.ollama_url(path)
     try:
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=_ollama_timeouts_for_get(), trust_env=False) as client:
             r = await client.get(url)
     except httpx.ConnectError as e:
         raise HTTPException(
@@ -94,10 +128,10 @@ async def _ollama_get(path: str, timeout: float = 10.0) -> Dict[str, Any]:
     return r.json()
 
 
-async def _ollama_post(path: str, payload: Dict[str, Any], timeout: float = 120.0) -> Dict[str, Any]:
+async def _ollama_post(path: str, payload: Dict[str, Any], read_timeout_s: Optional[float] = None) -> Dict[str, Any]:
     url = settings.ollama_url(path)
     try:
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=_ollama_timeouts_for_post(read_timeout_s), trust_env=False) as client:
             r = await client.post(url, json=payload)
     except httpx.ConnectError as e:
         raise HTTPException(
@@ -108,6 +142,7 @@ async def _ollama_post(path: str, payload: Dict[str, Any], timeout: float = 120.
             ),
         ) from e
     except httpx.TimeoutException as e:
+        # (Sometimes httpx TimeoutException prints as empty string; keep it anyway)
         raise HTTPException(status_code=504, detail=f"Timeout contacting Ollama at {url}. Error: {e}") from e
 
     if r.status_code >= 400:
@@ -184,7 +219,7 @@ async def _ddg_search(query: str, max_results: int) -> List[WebSource]:
     delays = [1.0, 2.0, 4.0]
     last_err: Exception | None = None
 
-    for i, d in enumerate(delays, start=1):
+    for d in delays:
         try:
             return await asyncio.to_thread(_ddg_search_sync, query, max_results)
         except Exception as e:
@@ -208,6 +243,7 @@ async def _ddg_search(query: str, max_results: int) -> List[WebSource]:
             "or enable caching / switch to a dedicated search API for reliability."
         ),
     ) from last_err
+
 
 async def _fetch_url_text(
     client: httpx.AsyncClient,
@@ -246,8 +282,11 @@ async def _fetch_many(
 ) -> Dict[str, str]:
     sem = asyncio.Semaphore(concurrency)
 
+    # Use a split timeout here too (web fetch should connect fast, but reading may take longer)
+    timeout_cfg = httpx.Timeout(connect=5.0, read=timeout_s, write=30.0, pool=30.0)
+
     async with httpx.AsyncClient(
-        timeout=timeout_s,
+        timeout=timeout_cfg,
         follow_redirects=True,
         trust_env=False,
     ) as client:
@@ -293,7 +332,8 @@ def _mk_context_block(s: WebSource, content: str, kind: str) -> str:
 # -----------------------------
 @router.get("/health")
 async def health() -> Dict[str, Any]:
-    data = await _ollama_get("/api/tags", timeout=5.0)
+    # health should always be fast: use tags endpoint + short read timeout from env
+    data = await _ollama_get("/api/tags")
     return {
         "ok": True,
         "ollama_base_url": settings.ollama_base_url_norm,
@@ -313,6 +353,17 @@ async def config() -> Dict[str, Any]:
         "ask_web_user_agent": settings.ask_web_user_agent,
         "ask_web_max_page_bytes": settings.ask_web_max_page_bytes,
         "ask_web_fetch_concurrency": settings.ask_web_fetch_concurrency,
+        # expose the effective timeouts (helps debugging)
+        "ollama_timeout_connect_s": settings.ollama_timeout_connect_s,
+        "ollama_timeout_get_read_s": settings.ollama_timeout_get_read_s,
+        "ollama_timeout_post_read_s": settings.ollama_timeout_post_read_s,
+        "ollama_timeout_write_s": settings.ollama_timeout_write_s,
+        "ollama_timeout_pool_s": settings.ollama_timeout_pool_s,
+        "ollama_chat_read_timeout_s": settings.ollama_chat_read_timeout_s,
+        "ollama_embeddings_read_timeout_s": settings.ollama_embeddings_read_timeout_s,
+        "ollama_tags_read_timeout_s": settings.ollama_tags_read_timeout_s,
+        "ollama_keep_alive": settings.ollama_keep_alive,
+        "ollama_num_predict": settings.ollama_num_predict,
     }
 
 
@@ -320,8 +371,13 @@ async def config() -> Dict[str, Any]:
 async def embed(req: EmbedRequest) -> EmbedResponse:
     resp = await _ollama_post(
         "/api/embeddings",
-        {"model": settings.ollama_embed_model, "prompt": req.text},
-        timeout=60.0,
+        {
+            "model": settings.ollama_embed_model,
+            "prompt": req.text,
+            # keep model warm if desired
+            "keep_alive": settings.ollama_keep_alive,
+        },
+        read_timeout_s=settings.ollama_embeddings_read_timeout_s,
     )
     emb = resp.get("embedding")
     if not isinstance(emb, list):
@@ -338,12 +394,18 @@ async def qa(req: QARequest) -> QAResponse:
     payload = {
         "model": settings.ollama_chat_model,
         "stream": False,
+        "keep_alive": settings.ollama_keep_alive,
+        "options": {
+            # cap output so it doesn't run forever unless user wants it
+            "num_predict": settings.ollama_num_predict,
+        },
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": req.question},
         ],
     }
-    resp = await _ollama_post("/api/chat", payload, timeout=180.0)
+
+    resp = await _ollama_post("/api/chat", payload, read_timeout_s=settings.ollama_chat_read_timeout_s)
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
         raise HTTPException(status_code=502, detail=f"Unexpected Ollama chat response: {resp}")
@@ -360,12 +422,17 @@ async def translate(req: TranslateRequest) -> TranslateResponse:
     payload = {
         "model": settings.ollama_translate_model,
         "stream": False,
+        "keep_alive": settings.ollama_keep_alive,
+        "options": {
+            "num_predict": settings.ollama_num_predict,
+        },
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": req.text},
         ],
     }
-    resp = await _ollama_post("/api/chat", payload, timeout=180.0)
+
+    resp = await _ollama_post("/api/chat", payload, read_timeout_s=settings.ollama_chat_read_timeout_s)
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
         raise HTTPException(status_code=502, detail=f"Unexpected Ollama chat response: {resp}")
@@ -421,13 +488,17 @@ async def ask_web(req: AskWebRequest) -> AskWebResponse:
     payload = {
         "model": settings.ollama_chat_model,
         "stream": False,
+        "keep_alive": settings.ollama_keep_alive,
+        "options": {
+            "num_predict": settings.ollama_num_predict,
+        },
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
     }
 
-    resp = await _ollama_post("/api/chat", payload, timeout=180.0)
+    resp = await _ollama_post("/api/chat", payload, read_timeout_s=settings.ollama_chat_read_timeout_s)
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
         raise HTTPException(status_code=502, detail=f"Unexpected Ollama chat response: {resp}")
