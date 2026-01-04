@@ -21,7 +21,7 @@ async def health() -> Dict[str, Any]:
     data = await ollama_get("/api/tags", timeout=5.0)
     return {
         "ok": True,
-        "time": datetime.utcnow().isoformat() + "Z",
+        "time": datetime.now(datetime.timezone.utc).isoformat() + "Z",
         "ollama_base_url": settings.ollama_base_url_norm,
         "models_count": len(data.get("models", [])),
         "models": [m.get("name") for m in data.get("models", []) if isinstance(m, dict)],
