@@ -11,6 +11,8 @@ from app.services.ollama_client import ollama_post
 from app.services.prompt_builder import build_system_prompt, context_block
 from app.services.web_fetcher import fetch_many
 
+import logging
+_logger = logging.getLogger(__name__)
 
 # -----------------------------
 # Public service API
@@ -66,7 +68,7 @@ async def ask_web_with_ollama(
 
 
 # -----------------------------
-# Small, focused helpers
+# Helpers
 # -----------------------------
 async def _search_sources(query: str, n: int) -> List[WebSource]:
     """
@@ -102,6 +104,8 @@ async def _search_sources(query: str, n: int) -> List[WebSource]:
 
         sources.append(WebSource(id=i, title=title, url=url, snippet=snippet))
 
+    _logger.debug(f"DDG search found {len(sources)} sources for query: {query}")
+    _logger.info(sources)
     return sources
 
 

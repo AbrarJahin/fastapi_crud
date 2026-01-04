@@ -6,7 +6,7 @@ import logging
 from app.api.items import router as items_router
 from app.api.agent import router as agent_router
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="FastAPI SQLite CRUD",
@@ -20,16 +20,16 @@ app.include_router(agent_router)
 
 @app.on_event("startup")
 async def startup() -> None:
-    logger.info("✅ FastAPI startup complete")
-    logger.info("Routes registered: %d", len(app.routes))
+    _logger.info("✅ FastAPI startup complete")
+    _logger.info("Routes registered: %d", len(app.routes))
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    logger.info("🛑 FastAPI shutdown")
+    _logger.info("🛑 FastAPI shutdown")
 
 @app.get("/health")
 def health():
-    logger.info("Health check called")
+    _logger.info("Health check called")
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat()
