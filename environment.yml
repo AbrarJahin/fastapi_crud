@@ -28,8 +28,7 @@ dependencies:
       # -------------------------
       # Web-search QA dependencies
       # -------------------------
-      - duckduckgo-search==6.3.3
-      - beautifulsoup4==4.12.3
+      - duckduckgo-async-search==1.0.0
 
       # -------------------------
       # Testing
