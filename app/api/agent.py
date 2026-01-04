@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List
 
+from duckduckgo_async_search import top_n_result
 import httpx
+from app.services.ask_web_service import ask_web_with_ollama
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
@@ -97,50 +99,11 @@ async def translate(req: TranslateRequest) -> TranslateResponse:
 
 @router.post("/ask-web", response_model=AskWebResponse)
 async def ask_web(req: AskWebRequest) -> AskWebResponse:
-    sources = await ddg_search(req.question, req.max_results)
-    top_sources = sources[: req.max_fetch]
-
-    async with httpx.AsyncClient(follow_redirects=True, trust_env=False) as client:
-        fetched = await fetch_many(
-            client=client,
-            urls=[s.url for s in top_sources],
-            user_agent=settings.ask_web_user_agent,
-            max_bytes=settings.ask_web_max_page_bytes,
-            timeout_s=settings.ask_web_fetch_timeout_s,
-            concurrency=settings.ask_web_fetch_concurrency,
-        )
-
-    context_blocks: List[str] = []
-    used_sources: List[WebSource] = []
-
-    for s in top_sources:
-        txt = (fetched.get(s.url) or "").strip()
-        if txt:
-            context_blocks.append(context_block(s, txt[: req.max_chars_per_page], "CONTENT"))
-            used_sources.append(s)
-        elif req.include_snippets and s.snippet:
-            snip = s.snippet.strip()
-            context_blocks.append(context_block(s, snip[: req.max_chars_per_page], "SNIPPET"))
-            used_sources.append(s)
-
-    if not context_blocks:
-        raise HTTPException(status_code=502, detail="Unable to fetch readable web content or snippets.")
-
-    system = build_system_prompt(req.system_prompt)
-    user = (
-        f"User question:\n{req.question}\n\n"
-        f"WEB CONTEXT:\n" + "\n\n---\n\n".join(context_blocks) + "\n\n"
-        "Answer with citations like [1], [2]."
+    return await ask_web_with_ollama(
+        req.question,
+        req.max_results,
+        max_fetch=req.max_fetch,
+        include_snippets=req.include_snippets,
+        max_chars_per_page=req.max_chars_per_page,
+        system_prompt=req.system_prompt,
     )
-
-    payload = {
-        "model": settings.ollama_chat_model,
-        "stream": False,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-    }
-    resp = await ollama_post("/api/chat", payload, timeout=180.0)
-    msg = (resp.get("message") or {}).get("content")
-    if not isinstance(msg, str):
-        raise HTTPException(status_code=502, detail=f"Unexpected chat response: {resp}")
-
-    return AskWebResponse(model=settings.ollama_chat_model, answer=msg.strip(), sources=used_sources)
