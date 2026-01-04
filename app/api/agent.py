@@ -1,22 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from duckduckgo_async_search import top_n_result
-import httpx
 from app.services.ask_web_service import ask_web_with_ollama
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.schemas.agent import (
     AskWebRequest, AskWebResponse, EmbedRequest, EmbedResponse,
-    QARequest, QAResponse, TranslateRequest, TranslateResponse, WebSource,
+    QARequest, QAResponse, TranslateRequest, TranslateResponse,
 )
 from app.services.ollama_client import ollama_get, ollama_post
-from app.services.prompt_builder import build_system_prompt, context_block
-from app.services.web_fetcher import fetch_many
-from app.services.web_search_ddg import ddg_search
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
