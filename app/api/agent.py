@@ -3,33 +3,46 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from app.services.ask_web_service import ask_web_with_ollama
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.schemas.agent import (
-    AskWebRequest, AskWebResponse, EmbedRequest, EmbedResponse,
-    QARequest, QAResponse, TranslateRequest, TranslateResponse,
+    AskWebRequest,
+    AskWebResponse,
+    EmbedRequest,
+    EmbedResponse,
+    QARequest,
+    QAResponse,
+    TranslateRequest,
+    TranslateResponse,
 )
+from app.services.ask_web_service import ask_web_with_ollama
 from app.services.ollama_client import ollama_get, ollama_post
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
+
 @router.get("/health")
 async def health() -> Dict[str, Any]:
-    # health should always be fast: use tags endpoint + short read timeout from env
-    data = await ollama_get("/api/tags", timeout=5.0)
+    # Uses /api/tags default timeout from ollama_client.py (.env driven)
+    data = await ollama_get("/api/tags")
+
     return {
         "ok": True,
         "time": datetime.now(timezone.utc).isoformat(),
         "ollama_base_url": settings.ollama_base_url_norm,
         "models_count": len(data.get("models", [])),
-        "models": [m.get("name") for m in data.get("models", []) if isinstance(m, dict)],
+        "models": [
+            m.get("name")
+            for m in data.get("models", [])
+            if isinstance(m, dict)
+        ],
     }
 
 
 @router.get("/config")
 async def config() -> Dict[str, Any]:
+    # Helpful for debugging effective runtime values
     return {
         "ollama_base_url": settings.ollama_base_url_norm,
         "chat_model": settings.ollama_chat_model,
@@ -39,7 +52,6 @@ async def config() -> Dict[str, Any]:
         "ask_web_user_agent": settings.ask_web_user_agent,
         "ask_web_max_page_bytes": settings.ask_web_max_page_bytes,
         "ask_web_fetch_concurrency": settings.ask_web_fetch_concurrency,
-        # expose the effective timeouts (helps debugging)
         "ollama_timeout_connect_s": settings.ollama_timeout_connect_s,
         "ollama_timeout_get_read_s": settings.ollama_timeout_get_read_s,
         "ollama_timeout_post_read_s": settings.ollama_timeout_post_read_s,
@@ -55,45 +67,93 @@ async def config() -> Dict[str, Any]:
 
 @router.post("/embed", response_model=EmbedResponse)
 async def embed(req: EmbedRequest) -> EmbedResponse:
-    resp = await ollama_post("/api/embeddings", {"model": settings.ollama_embed_model, "prompt": req.text}, timeout=60.0)
+    # Uses /api/embeddings default timeout from ollama_client.py
+    resp = await ollama_post(
+        "/api/embeddings",
+        {
+            "model": settings.ollama_embed_model,
+            "prompt": req.text,
+        },
+    )
+
     emb = resp.get("embedding")
     if not isinstance(emb, list):
-        raise HTTPException(status_code=502, detail=f"Unexpected embeddings response: {resp}")
-    return EmbedResponse(model=settings.ollama_embed_model, embedding=emb)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unexpected embeddings response: {resp}",
+        )
+
+    return EmbedResponse(
+        model=settings.ollama_embed_model,
+        embedding=emb,
+    )
 
 
 @router.post("/qa", response_model=QAResponse)
 async def qa(req: QARequest) -> QAResponse:
     system = req.system_prompt or "You are helpful. Answer in the user's language. Be concise."
+
     payload = {
         "model": settings.ollama_chat_model,
         "stream": False,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": req.question}],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": req.question},
+        ],
+        "options": {"num_predict": settings.ollama_num_predict},
+        "keep_alive": settings.ollama_keep_alive,
     }
-    resp = await ollama_post("/api/chat", payload, timeout=180.0)
+
+    # Uses /api/chat default timeout (OLLAMA_CHAT_READ_TIMEOUT_S)
+    resp = await ollama_post("/api/chat", payload)
+
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
-        raise HTTPException(status_code=502, detail=f"Unexpected chat response: {resp}")
-    return QAResponse(model=settings.ollama_chat_model, answer=msg.strip())
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unexpected chat response: {resp}",
+        )
+
+    return QAResponse(
+        model=settings.ollama_chat_model,
+        answer=msg.strip(),
+    )
 
 
 @router.post("/translate", response_model=TranslateResponse)
 async def translate(req: TranslateRequest) -> TranslateResponse:
     system = f"Translate into {req.target_language}. Output only translation."
+
     payload = {
         "model": settings.ollama_translate_model,
         "stream": False,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": req.text}],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": req.text},
+        ],
+        "options": {"num_predict": settings.ollama_num_predict},
+        "keep_alive": settings.ollama_keep_alive,
     }
-    resp = await ollama_post("/api/chat", payload, timeout=180.0)
+
+    # Uses /api/chat default timeout (OLLAMA_CHAT_READ_TIMEOUT_S)
+    resp = await ollama_post("/api/chat", payload)
+
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
-        raise HTTPException(status_code=502, detail=f"Unexpected translation response: {resp}")
-    return TranslateResponse(model=settings.ollama_translate_model, translated_text=msg.strip())
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unexpected translation response: {resp}",
+        )
+
+    return TranslateResponse(
+        model=settings.ollama_translate_model,
+        translated_text=msg.strip(),
+    )
 
 
 @router.post("/ask-web", response_model=AskWebResponse)
 async def ask_web(req: AskWebRequest) -> AskWebResponse:
+    # ask_web_service internally uses ollama_client defaults
     return await ask_web_with_ollama(
         req.question,
         req.max_results,

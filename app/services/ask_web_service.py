@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple
 
 import httpx
 from fastapi import HTTPException
-from duckduckgo_async_search import top_n_result
 
 from app.config import settings
 from app.schemas.agent import AskWebResponse, WebSource
@@ -48,7 +47,10 @@ async def ask_web_with_ollama(
         )
 
     if not context_blocks:
-        raise HTTPException(status_code=502, detail="Unable to fetch readable web content or snippets.")
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to fetch readable web content or snippets.",
+        )
 
     answer = await _ollama_answer(
         question=query,
@@ -67,6 +69,21 @@ async def ask_web_with_ollama(
 # Small, focused helpers
 # -----------------------------
 async def _search_sources(query: str, n: int) -> List[WebSource]:
+    """
+    DDG search wrapper. Import happens here to avoid crashing app startup
+    if the dependency is missing in the active environment.
+    """
+    try:
+        from duckduckgo_async_search import top_n_result  # local import (safer)
+    except ModuleNotFoundError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "duckduckgo_async_search is not installed in this environment. "
+                "Install it in the same env used to run FastAPI."
+            ),
+        ) from e
+
     try:
         items = await top_n_result(query, n=n)
     except Exception as e:
@@ -137,10 +154,18 @@ async def _ollama_answer(
     payload = {
         "model": settings.ollama_chat_model,
         "stream": False,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "options": {"num_predict": settings.ollama_num_predict},
+        "keep_alive": settings.ollama_keep_alive,
     }
 
-    resp = await ollama_post("/api/chat", payload, timeout=180.0)
+    # No per-call timeout here: defaults are resolved in ollama_client.py
+    # /api/chat -> OLLAMA_CHAT_READ_TIMEOUT_S (e.g. 600s)
+    resp = await ollama_post("/api/chat", payload)
+
     msg = (resp.get("message") or {}).get("content")
     if not isinstance(msg, str):
         raise HTTPException(status_code=502, detail=f"Unexpected chat response: {resp}")
