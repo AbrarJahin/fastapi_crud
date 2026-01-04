@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from app.services.ask_web_service import ask_web_with_ollama
@@ -21,7 +21,7 @@ async def health() -> Dict[str, Any]:
     data = await ollama_get("/api/tags", timeout=5.0)
     return {
         "ok": True,
-        "time": datetime.now(datetime.timezone.utc).isoformat() + "Z",
+        "time": datetime.now(timezone.utc).isoformat(),
         "ollama_base_url": settings.ollama_base_url_norm,
         "models_count": len(data.get("models", [])),
         "models": [m.get("name") for m in data.get("models", []) if isinstance(m, dict)],

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import FastAPI
 
 import logging
@@ -32,5 +32,5 @@ def health():
     logger.info("Health check called")
     return {
         "status": "ok",
-        "time": datetime.now(datetime.timezone.utc).isoformat() + "Z"
+        "time": datetime.now(timezone.utc).isoformat()
     }
